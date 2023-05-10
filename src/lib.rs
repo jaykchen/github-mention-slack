@@ -40,7 +40,6 @@ async fn handler(login: &str, payload: EventPayload) {
         EventPayload::IssuesEvent(e) => {
             issue = Some(e.issue.clone());
             send_message_to_channel(&slack_workspace, &slack_channel, e.issue.title.clone());
-
         }
 
         EventPayload::IssueCommentEvent(e) => {
@@ -50,17 +49,29 @@ async fn handler(login: &str, payload: EventPayload) {
 
         EventPayload::PullRequestEvent(e) => {
             pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(&slack_workspace, &slack_channel, e.pull_request.title.unwrap());
+            send_message_to_channel(
+                &slack_workspace,
+                &slack_channel,
+                e.pull_request.title.unwrap(),
+            );
         }
 
         EventPayload::PullRequestReviewEvent(e) => {
             pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(&slack_workspace, &slack_channel, e.pull_request.title.unwrap());
+            send_message_to_channel(
+                &slack_workspace,
+                &slack_channel,
+                e.pull_request.title.unwrap(),
+            );
         }
 
         EventPayload::PullRequestReviewCommentEvent(e) => {
             pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(&slack_workspace, &slack_channel, e.pull_request.title.unwrap());
+            send_message_to_channel(
+                &slack_workspace,
+                &slack_channel,
+                e.pull_request.title.unwrap(),
+            );
         }
 
         _ => (),
@@ -69,9 +80,16 @@ async fn handler(login: &str, payload: EventPayload) {
     if issue.is_some() || pull_request.is_some() {
         let octocrab = get_octo(&Provided(login.to_string()));
         let activity = octocrab.activity();
+
         match activity.notifications().list().send().await {
             Ok(notes) => {
-                for note in notes {
+                send_message_to_channel(
+                    &slack_workspace,
+                    &slack_channel,
+                    notes.clone().total_count.unwrap().to_string(),
+                );
+
+                for note in notes.items {
                     if note.unread && note.reason == "mention" {
                         let title = note.subject.title;
                         let html_url = &note.subject.url.unwrap();
