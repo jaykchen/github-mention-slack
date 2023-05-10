@@ -38,34 +38,23 @@ async fn handler(login: &str, payload: EventPayload) {
 
     match payload {
         EventPayload::IssuesEvent(e) => {
-            issue = Some(e.issue.clone());
+            issue = Some(e.issue);
         }
 
         EventPayload::IssueCommentEvent(e) => {
-            issue = Some(e.issue.clone());
-            send_message_to_channel(&slack_workspace, &slack_channel, e.issue.title.clone());
+            issue = Some(e.issue);
         }
 
         EventPayload::PullRequestEvent(e) => {
-            pull_request = Some(e.pull_request.clone());
+            pull_request = Some(e.pull_request);
         }
 
         EventPayload::PullRequestReviewEvent(e) => {
-            pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(
-                &slack_workspace,
-                &slack_channel,
-                e.pull_request.title.unwrap(),
-            );
+            pull_request = Some(e.pull_request);
         }
 
         EventPayload::PullRequestReviewCommentEvent(e) => {
-            pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(
-                &slack_workspace,
-                &slack_channel,
-                e.pull_request.title.unwrap(),
-            );
+            pull_request = Some(e.pull_request);
         }
 
         _ => (),
@@ -84,7 +73,17 @@ async fn handler(login: &str, payload: EventPayload) {
                 );
 
                 for note in notes.items {
-                    if note.reason == "mention" || note.reason == "subscribed" {
+                    send_message_to_channel(&slack_workspace, &slack_channel, note.url.to_string());
+
+                    if note.reason == "subscribed"
+                        || note.reason == "mention"
+                        || note.reason == "assign"
+                        || note.reason == "comment"
+                        || note.reason == "manual"
+                        || note.reason == "review_requested"
+                        || note.reason == "state_change"
+                        || note.reason == "your_activity"
+                    {
                         let title = note.subject.title;
                         let html_url = &note.subject.url.unwrap();
                         let text = format!("{title}\n{html_url}");
