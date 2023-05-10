@@ -39,7 +39,6 @@ async fn handler(login: &str, payload: EventPayload) {
     match payload {
         EventPayload::IssuesEvent(e) => {
             issue = Some(e.issue.clone());
-            send_message_to_channel(&slack_workspace, &slack_channel, e.issue.title.clone());
         }
 
         EventPayload::IssueCommentEvent(e) => {
@@ -49,11 +48,6 @@ async fn handler(login: &str, payload: EventPayload) {
 
         EventPayload::PullRequestEvent(e) => {
             pull_request = Some(e.pull_request.clone());
-            send_message_to_channel(
-                &slack_workspace,
-                &slack_channel,
-                e.pull_request.title.unwrap(),
-            );
         }
 
         EventPayload::PullRequestReviewEvent(e) => {
@@ -90,7 +84,7 @@ async fn handler(login: &str, payload: EventPayload) {
                 );
 
                 for note in notes.items {
-                    if note.unread && note.reason == "mention" {
+                    if note.reason == "mention" || note.reason == "subscribed" {
                         let title = note.subject.title;
                         let html_url = &note.subject.url.unwrap();
                         let text = format!("{title}\n{html_url}");
