@@ -1,5 +1,5 @@
 use dotenv::dotenv;
-use github_flows::{get_octo, listen_to_event, EventPayload, GithubLogin::Provided};
+use github_flows::{listen_to_event, EventPayload, GithubLogin::Provided};
 use slack_flows::send_message_to_channel;
 use std::env;
 
@@ -22,76 +22,82 @@ pub async fn run() -> anyhow::Result<()> {
             "pull_request_review",
             "pull_request_review_comment",
         ],
-        |payload| handler(&github_login, payload),
+        |payload| handler(&github_owner, payload),
     )
     .await;
 
     Ok(())
 }
 
-async fn handler(login: &str, payload: EventPayload) {
+async fn handler(owner: &str, payload: EventPayload) {
     let slack_workspace = env::var("slack_workspace").unwrap_or("secondstate".to_string());
     let slack_channel = env::var("slack_channel").unwrap_or("github-status".to_string());
 
-    let mut issue = None;
-    let mut pull_request = None;
+    let at_string = format!("@{}", owner);
+    let mut is_mentioned = false;
+    let mut title = "".to_string();
+    let mut html_url = "".to_string();
 
     match payload {
         EventPayload::IssuesEvent(e) => {
-            issue = Some(e.issue);
+            let issue = e.issue;
+            is_mentioned = issue.body.unwrap_or("".to_string()).contains(&at_string);
+
+            if is_mentioned {
+                title = issue.title;
+                html_url = issue.html_url.to_string();
+            }
         }
 
         EventPayload::IssueCommentEvent(e) => {
-            issue = Some(e.issue);
+            let comment = e.comment;
+            is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
+
+            if is_mentioned {
+                title = e.issue.title;
+                html_url = comment.html_url.to_string();
+            }
         }
 
         EventPayload::PullRequestEvent(e) => {
-            pull_request = Some(e.pull_request);
+            let pull_request = e.pull_request;
+            is_mentioned = pull_request
+                .body
+                .unwrap_or("".to_string())
+                .contains(&at_string);
+            if is_mentioned {
+                title = pull_request.title.unwrap();
+                html_url = pull_request
+                    .html_url
+                    .expect("html_url not found")
+                    .to_string();
+            }
         }
 
         EventPayload::PullRequestReviewEvent(e) => {
-            pull_request = Some(e.pull_request);
+            let review = e.review;
+            is_mentioned = review.body.unwrap_or("".to_string()).contains(&at_string);
+            if is_mentioned {
+                title = e.pull_request.title.unwrap();
+                html_url = review.html_url.to_string();
+            }
         }
 
         EventPayload::PullRequestReviewCommentEvent(e) => {
-            pull_request = Some(e.pull_request);
+            let comment = e.comment;
+            is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
+
+            if is_mentioned {
+                title = e.pull_request.title.unwrap();
+                html_url = comment.html_url.to_string();
+            }
         }
 
         _ => (),
     }
 
-    if issue.is_some() || pull_request.is_some() {
-        let octocrab = get_octo(&Provided(login.to_string()));
-        let activity = octocrab.activity();
-
-        match activity.notifications().list().send().await {
-            Ok(notes) => {
-                send_message_to_channel(
-                    &slack_workspace,
-                    &slack_channel,
-                    notes.clone().total_count.unwrap().to_string(),
-                );
-
-                for note in notes.items {
-                    send_message_to_channel(&slack_workspace, &slack_channel, note.url.to_string());
-
-                    if note.reason == "subscribed"
-                        || note.reason == "mention"
-                        || note.reason == "assign"
-                        || note.reason == "comment"
-                        || note.reason == "manual"
-                        || note.reason == "review_requested"
-                        || note.reason == "state_change"
-                        || note.reason == "your_activity"
-                    {
-                        let title = note.subject.title;
-                        let html_url = &note.subject.url.unwrap();
-                        let text = format!("{title}\n{html_url}");
-                        send_message_to_channel(&slack_workspace, &slack_channel, text);
-                    }
-                }
-            }
-            Err(_e) => {}
-        };
+    if is_mentioned {
+        let text = format!("You are mentioned in:\n{title}\n{html_url}");
+        send_message_to_channel(&slack_workspace, &slack_channel, text);
     }
 }
