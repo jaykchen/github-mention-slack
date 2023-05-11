@@ -3,8 +3,8 @@ use chrono::DateTime;
 use dotenv::dotenv;
 use github_flows::{
     listen_to_event,
-    octocrab::models::{
-        events::payload::{IssueCommentEventAction, IssuesEventAction, PullRequestEventAction},
+    octocrab::models::events::payload::{
+        IssueCommentEventAction, IssuesEventAction, PullRequestEventAction,
     },
     EventPayload,
     GithubLogin::Provided,
@@ -47,6 +47,7 @@ async fn handler(owner: &str, payload: EventPayload) {
 
     let at_string = format!("@{}", owner);
     let mut is_mentioned = false;
+    let mut is_valid_event = true;
     let mut name = "".to_string();
     let mut time = DateTime::default();
     let mut title = "".to_string();
@@ -58,7 +59,9 @@ async fn handler(owner: &str, payload: EventPayload) {
             let action = e.action;
             is_mentioned = issue.body.unwrap_or("".to_string()).contains(&at_string);
 
-            if is_mentioned && action != IssuesEventAction::Closed {
+            is_valid_event = action != IssuesEventAction::Closed;
+
+            if is_mentioned && is_valid_event {
                 name = issue.user.login;
                 title = issue.title;
                 html_url = issue.html_url.to_string();
@@ -70,8 +73,8 @@ async fn handler(owner: &str, payload: EventPayload) {
             let comment = e.comment;
             let action = e.action;
             is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
-
-            if is_mentioned && action != IssueCommentEventAction::Deleted {
+            is_valid_event = action != IssueCommentEventAction::Deleted;
+            if is_mentioned && is_valid_event {
                 name = comment.user.login;
                 title = e.issue.title;
                 html_url = comment.html_url.to_string();
@@ -86,7 +89,8 @@ async fn handler(owner: &str, payload: EventPayload) {
                 .body
                 .unwrap_or("".to_string())
                 .contains(&at_string);
-            if is_mentioned && action != PullRequestEventAction::Closed {
+            is_valid_event = action != PullRequestEventAction::Closed;
+            if is_mentioned && is_valid_event {
                 name = pull_request.user.unwrap().login;
                 title = pull_request.title.unwrap();
                 html_url = pull_request
@@ -100,6 +104,7 @@ async fn handler(owner: &str, payload: EventPayload) {
         EventPayload::PullRequestReviewEvent(e) => {
             let review = e.review;
             is_mentioned = review.body.unwrap_or("".to_string()).contains(&at_string);
+
             if is_mentioned {
                 name = review.user.unwrap().login;
                 title = e.pull_request.title.unwrap();
@@ -123,7 +128,7 @@ async fn handler(owner: &str, payload: EventPayload) {
         _ => (),
     }
 
-    if is_mentioned {
+    if is_valid_event && is_mentioned {
         let text = format!("{name} mentioned you in {title}\n{html_url}");
         send_message_to_channel(&slack_workspace, &slack_channel, text);
 
