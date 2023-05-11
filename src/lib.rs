@@ -1,5 +1,12 @@
 use dotenv::dotenv;
-use github_flows::{listen_to_event, EventPayload, GithubLogin::Provided};
+use github_flows::{
+    listen_to_event,
+    EventPayload,
+    GithubLogin::Provided,
+    octocrab::models::events::payload::{
+        IssueCommentEventAction, IssuesEventAction, PullRequestEventAction,
+    },
+};
 use slack_flows::send_message_to_channel;
 use std::env;
 
@@ -41,9 +48,10 @@ async fn handler(owner: &str, payload: EventPayload) {
     match payload {
         EventPayload::IssuesEvent(e) => {
             let issue = e.issue;
+            let action = e.action; 
             is_mentioned = issue.body.unwrap_or("".to_string()).contains(&at_string);
 
-            if is_mentioned {
+            if is_mentioned && action != IssuesEventAction::Closed {
                 title = issue.title;
                 html_url = issue.html_url.to_string();
             }
@@ -51,9 +59,10 @@ async fn handler(owner: &str, payload: EventPayload) {
 
         EventPayload::IssueCommentEvent(e) => {
             let comment = e.comment;
+            let action = e.action;
             is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
 
-            if is_mentioned {
+            if is_mentioned && action != IssueCommentEventAction::Deleted {
                 title = e.issue.title;
                 html_url = comment.html_url.to_string();
             }
@@ -61,11 +70,12 @@ async fn handler(owner: &str, payload: EventPayload) {
 
         EventPayload::PullRequestEvent(e) => {
             let pull_request = e.pull_request;
+            let action = e.action;
             is_mentioned = pull_request
                 .body
                 .unwrap_or("".to_string())
                 .contains(&at_string);
-            if is_mentioned {
+            if is_mentioned && action != PullRequestEventAction::Closed {
                 title = pull_request.title.unwrap();
                 html_url = pull_request
                     .html_url
