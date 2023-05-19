@@ -11,10 +11,13 @@ use github_flows::{
 };
 use slack_flows::send_message_to_channel;
 use std::env;
+
 #[no_mangle]
 #[tokio::main(flavor = "current_thread")]
 pub async fn run() -> anyhow::Result<()> {
     dotenv().ok();
+
+    // flows function watches your [github_login] for mentions in Issues, PR, and comments
     let github_login = env::var("github_login").unwrap_or("alabulei1".to_string());
     let github_owner = env::var("github_owner").unwrap_or("alabulei1".to_string());
     let github_repo = env::var("github_repo").unwrap_or("a-test".to_string());
@@ -30,14 +33,14 @@ pub async fn run() -> anyhow::Result<()> {
             "pull_request_review",
             "pull_request_review_comment",
         ],
-        |payload| handler(&github_owner, payload),
+        |payload| handler(&github_login, payload),
     )
     .await;
 
     Ok(())
 }
 
-async fn handler(owner: &str, payload: EventPayload) {
+async fn handler(login: &str, payload: EventPayload) {
     let slack_workspace = env::var("slack_workspace").unwrap_or("secondstate".to_string());
     let slack_channel = env::var("slack_channel").unwrap_or("github-status".to_string());
 
@@ -45,7 +48,7 @@ async fn handler(owner: &str, payload: EventPayload) {
     let airtable_base_id = env::var("airtable_base_id").unwrap_or("appNEswczILgUsxML".to_string());
     let airtable_table_name = env::var("airtable_table_name").unwrap_or("fork".to_string());
 
-    let at_string = format!("@{}", owner);
+    let at_string = format!("@{}", login);
     let mut is_mentioned = false;
     let mut is_valid_event = true;
     let mut name = "".to_string();
