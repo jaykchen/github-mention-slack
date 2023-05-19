@@ -6,24 +6,29 @@ use github_flows::{
     octocrab::models::events::payload::{
         IssueCommentEventAction, IssuesEventAction, PullRequestEventAction,
     },
-    EventPayload,
-    GithubLogin::Provided,
+    EventPayload, GithubLogin,
 };
 use slack_flows::send_message_to_channel;
 use std::env;
 
 #[no_mangle]
 #[tokio::main(flavor = "current_thread")]
-pub async fn run() -> anyhow::Result<()> {
+pub async fn run() {
     dotenv().ok();
 
-    // flows function watches your [github_login] for mentions in Issues, PR, and comments
-    let github_login = env::var("github_login").unwrap_or("alabulei1".to_string());
+    // flows function watches your [user_watch_list], a list of github login ids for mentions in Issues, PR, and comments
+    // [user_watch_list] is a string of one or multiple github login ids separated by a space
     let github_owner = env::var("github_owner").unwrap_or("alabulei1".to_string());
     let github_repo = env::var("github_repo").unwrap_or("a-test".to_string());
+    let raw_user_watch_list = env::var("user_watch_list").unwrap_or("alabulei1".to_string());
+
+    let user_watch_list = raw_user_watch_list
+        .split_whitespace()
+        .map(|login| format!("@{login}"))
+        .collect::<Vec<String>>();
 
     listen_to_event(
-        &Provided(github_login.clone()),
+        &GithubLogin::Default,
         &github_owner,
         &github_repo,
         vec![
@@ -33,14 +38,13 @@ pub async fn run() -> anyhow::Result<()> {
             "pull_request_review",
             "pull_request_review_comment",
         ],
-        |payload| handler(&github_login, payload),
+        |payload| handler(user_watch_list, payload),
     )
     .await;
 
-    Ok(())
 }
 
-async fn handler(login: &str, payload: EventPayload) {
+async fn handler(watch_list: Vec<String>, payload: EventPayload) {
     let slack_workspace = env::var("slack_workspace").unwrap_or("secondstate".to_string());
     let slack_channel = env::var("slack_channel").unwrap_or("github-status".to_string());
 
@@ -48,7 +52,6 @@ async fn handler(login: &str, payload: EventPayload) {
     let airtable_base_id = env::var("airtable_base_id").unwrap_or("appNEswczILgUsxML".to_string());
     let airtable_table_name = env::var("airtable_table_name").unwrap_or("fork".to_string());
 
-    let at_string = format!("@{}", login);
     let mut is_mentioned = false;
     let mut is_valid_event = true;
     let mut name = "".to_string();
@@ -58,11 +61,10 @@ async fn handler(login: &str, payload: EventPayload) {
 
     match payload {
         EventPayload::IssuesEvent(e) => {
+            is_valid_event = e.action != IssuesEventAction::Closed;
             let issue = e.issue;
-            let action = e.action;
-            is_mentioned = issue.body.unwrap_or("".to_string()).contains(&at_string);
-
-            is_valid_event = action != IssuesEventAction::Closed;
+            let text_block = issue.body.unwrap_or("".to_string());
+            is_mentioned = watch_list.iter().any(|login_id| text_block.contains(login_id));
 
             if is_mentioned && is_valid_event {
                 name = issue.user.login;
@@ -73,10 +75,11 @@ async fn handler(login: &str, payload: EventPayload) {
         }
 
         EventPayload::IssueCommentEvent(e) => {
+            is_valid_event = e.action != IssueCommentEventAction::Deleted;
             let comment = e.comment;
-            let action = e.action;
-            is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
-            is_valid_event = action != IssueCommentEventAction::Deleted;
+            let text_block = comment.body.unwrap_or("".to_string());
+            is_mentioned = watch_list.iter().any(|login_id| text_block.contains(login_id));
+
             if is_mentioned && is_valid_event {
                 name = comment.user.login;
                 title = e.issue.title;
@@ -86,13 +89,11 @@ async fn handler(login: &str, payload: EventPayload) {
         }
 
         EventPayload::PullRequestEvent(e) => {
+            is_valid_event = e.action != PullRequestEventAction::Closed;
             let pull_request = e.pull_request;
-            let action = e.action;
-            is_mentioned = pull_request
-                .body
-                .unwrap_or("".to_string())
-                .contains(&at_string);
-            is_valid_event = action != PullRequestEventAction::Closed;
+            let text_block = pull_request.body.unwrap_or("".to_string());
+            is_mentioned = watch_list.iter().any(|login_id| text_block.contains(login_id));
+
             if is_mentioned && is_valid_event {
                 name = pull_request.user.unwrap().login;
                 title = pull_request.title.unwrap();
@@ -106,7 +107,8 @@ async fn handler(login: &str, payload: EventPayload) {
 
         EventPayload::PullRequestReviewEvent(e) => {
             let review = e.review;
-            is_mentioned = review.body.unwrap_or("".to_string()).contains(&at_string);
+            let text_block = review.body.unwrap_or("".to_string());
+            is_mentioned = watch_list.iter().any(|login_id| text_block.contains(login_id));
 
             if is_mentioned {
                 name = review.user.unwrap().login;
@@ -118,7 +120,8 @@ async fn handler(login: &str, payload: EventPayload) {
 
         EventPayload::PullRequestReviewCommentEvent(e) => {
             let comment = e.comment;
-            is_mentioned = comment.body.unwrap_or("".to_string()).contains(&at_string);
+            let text_block = comment.body.unwrap_or("".to_string());
+            is_mentioned = watch_list.iter().any(|login_id| text_block.contains(login_id));
 
             if is_mentioned {
                 name = comment.user.login;
