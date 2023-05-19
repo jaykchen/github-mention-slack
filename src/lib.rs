@@ -135,7 +135,7 @@ async fn handler(watch_list: Vec<String>, payload: EventPayload) {
     }
 
     if is_valid_event && is_mentioned {
-        let text = format!("{name} mentioned you in {title}\n{html_url}");
+        let text = format!("{name} mentioned people on watch list in {title}\n{html_url}");
         send_message_to_channel(&slack_workspace, &slack_channel, text);
 
         let data = serde_json::json!({
